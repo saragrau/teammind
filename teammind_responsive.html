@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TeamMind — Lateral Knowledge Synthesis</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap');
+
+:root {
+  --bg: #f4f2ee;
+  --surface: #ffffff;
+  --surface2: #f8f7f4;
+  --border: #e0dbd3;
+  --border2: #ccc8c0;
+  --accent: #2563eb;
+  --accent2: #7c3aed;
+  --accent3: #dc2626;
+  --accent4: #059669;
+  --text: #374151;
+  --text-dim: #9ca3af;
+  --text-bright: #111827;
+  --shadow: rgba(0,0,0,0.08);
+  --shadow-strong: rgba(0,0,0,0.16);
+  --edge-built:#059669; --edge-debug:#d97706; --edge-decision:#db2777;
+  --edge-mentioned:#cbd5e1; --edge-affected:#94a3b8; --edge-dependency:#93c5fd;
+  --edge-cooccur:#c4b5fd; --edge-conflict:#ef4444;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Space Mono', monospace;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ═══════════════════════════════════════════════
+   SHARED — header, logo, live badge, scrollbar
+═══════════════════════════════════════════════ */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 52px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  z-index: 100;
+  box-shadow: 0 1px 3px var(--shadow);
+}
+.logo {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  color: var(--text-bright);
+  display: flex; align-items: center; gap: 10px;
+}
+.logo-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px #2563eb22;
+  animation: breathe 3s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%,100%{box-shadow:0 0 0 3px #2563eb22} 50%{box-shadow:0 0 0 6px #2563eb11}
+}
+.live-badge {
+  display:flex; align-items:center; gap:5px;
+  color: var(--accent4); font-size:0.58rem; letter-spacing:0.12em;
+  text-transform:uppercase; background:#d1fae522;
+  border:1px solid #059669; border-radius:20px; padding:2px 8px;
+}
+.live-dot {
+  width:5px; height:5px; border-radius:50%;
+  background:var(--accent4); animation:pulse-live 2s ease infinite;
+}
+@keyframes pulse-live{0%,100%{opacity:1}50%{opacity:0.3}}
+
+.header-meta {
+  display:flex; align-items:center; gap:16px;
+  font-size:0.62rem; color:var(--text-dim);
+}
+.header-sep { color: var(--border2); }
+
+/* Shared graph area */
+.graph-area { flex:1; position:relative; overflow:hidden; background:var(--bg); }
+#graph-svg { width:100%; height:100%; }
+.cluster-label {
+  font-family:'Syne',sans-serif; font-size:9px; font-weight:700;
+  letter-spacing:0.18em; text-transform:uppercase; pointer-events:none;
+}
+.tooltip {
+  position:absolute; background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:10px 13px; font-size:0.6rem;
+  pointer-events:none; opacity:0; transition:opacity 0.12s;
+  max-width:230px; z-index:200; box-shadow:0 4px 20px var(--shadow-strong);
+}
+.tooltip.visible{opacity:1}
+.tt-name{font-family:'Syne',sans-serif;font-weight:700;font-size:0.78rem;color:var(--text-bright);margin-bottom:3px}
+.tt-meta{color:var(--text-dim);line-height:1.55}
+
+/* Shared ticker */
+.update-ticker {
+  position:absolute; bottom:14px; right:14px;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:8px 12px; font-size:0.54rem;
+  color:var(--text-dim); z-index:50; max-width:240px;
+  box-shadow:0 2px 12px var(--shadow);
+}
+.ticker-title{color:var(--accent4);letter-spacing:0.14em;text-transform:uppercase;margin-bottom:5px;font-size:0.48rem}
+.ticker-item{padding:2px 0;animation:fadeInUp 0.3s ease;display:flex;gap:6px;align-items:baseline}
+.ticker-time{color:var(--accent);flex-shrink:0}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+
+/* Shared info rows */
+.info-name{font-family:'Syne',sans-serif;font-weight:800;font-size:0.95rem;color:var(--text-bright);margin-bottom:2px}
+.info-type{font-size:0.52rem;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:12px}
+.info-row{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border);font-size:0.6rem;gap:8px}
+.info-row-key{color:var(--text-dim);flex-shrink:0}
+.info-row-val{color:var(--text-bright);font-weight:700;text-align:right}
+.confidence-bar{width:38px;height:3px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0}
+.confidence-fill{height:100%;border-radius:2px}
+.conn-item{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:5px;margin-bottom:3px;background:var(--surface2);font-size:0.59rem;cursor:pointer;transition:background 0.12s;gap:6px}
+.conn-item:hover,.conn-item:active{background:#eff6ff}
+.conn-left{flex:1;min-width:0}
+.conn-name{color:var(--text-bright);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conn-type{font-size:0.5rem;letter-spacing:0.08em;text-transform:uppercase;opacity:0.55;margin-top:1px}
+.conn-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0}
+.conf-label{font-size:0.52rem}
+.source-chips{display:flex;gap:3px;flex-wrap:wrap;margin-top:3px}
+.source-chip{padding:1px 5px;border-radius:8px;font-size:0.48rem;border:1px solid;cursor:pointer;transition:opacity 0.15s}
+.source-chip:hover{opacity:0.75}
+
+/* Query shared */
+.query-input {
+  width:100%; background:var(--surface2); border:1px solid var(--border);
+  border-radius:6px; padding:9px 44px 9px 11px; color:var(--text-bright);
+  font-family:'Space Mono',monospace; font-size:0.67rem; outline:none;
+  transition:border-color 0.2s,box-shadow 0.2s; resize:none; height:64px;
+}
+.query-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px #2563eb18}
+.query-response {
+  padding:9px 11px; background:#eff6ff; border:1px solid #bfdbfe;
+  border-radius:6px; font-size:0.63rem; line-height:1.65;
+  color:var(--text); margin-top:8px; display:none;
+  max-height:150px; overflow-y:auto;
+}
+.query-response.visible{display:block}
+.response-thinking{display:flex;align-items:center;gap:7px;color:var(--accent);font-size:0.6rem}
+.thinking-dots span{animation:blink 1.2s infinite;opacity:0}
+.thinking-dots span:nth-child(2){animation-delay:0.2s}
+.thinking-dots span:nth-child(3){animation-delay:0.4s}
+@keyframes blink{0%,80%,100%{opacity:0}40%{opacity:1}}
+
+/* Legend */
+.legend-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:0.56rem;color:var(--text-dim);cursor:pointer;padding:4px 6px;border-radius:4px;transition:background 0.12s;user-select:none}
+.legend-item:hover{background:var(--surface2)}
+.legend-item.active{color:var(--text)}
+.legend-item.inactive{opacity:0.35}
+.legend-line{width:16px;height:2.5px;flex-shrink:0;border-radius:2px}
+.shape-legend{display:flex;gap:16px;margin-top:2px}
+.shape-legend-item{display:flex;align-items:center;gap:6px;font-size:0.56rem;color:var(--text-dim)}
+
+/* Data source chips */
+.data-sources{display:flex;flex-wrap:wrap;gap:4px}
+.ds-chip{padding:3px 9px;border-radius:12px;font-size:0.52rem;border:1px solid;cursor:pointer;transition:opacity 0.2s;user-select:none}
+.ds-chip.inactive{opacity:0.3}
+
+/* Modal — shared structure */
+.modal-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.35);
+  z-index:500; display:none; backdrop-filter:blur(2px);
+}
+.modal-overlay.open{display:flex}
+.modal-breadcrumb{font-size:0.52rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-dim);margin-bottom:4px;display:flex;align-items:center;gap:5px}
+.modal-breadcrumb .bc-sep{opacity:0.4}
+.modal-title{font-family:'Syne',sans-serif;font-weight:700;font-size:0.95rem;color:var(--text-bright);margin-bottom:2px}
+.modal-subtitle{font-size:0.6rem;color:var(--text-dim)}
+.modal-body{flex:1;overflow-y:auto;padding:16px 20px}
+.chunk-meta{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.chunk-badge{padding:3px 10px;border-radius:12px;font-size:0.55rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;border:1px solid}
+.confidence-block{display:flex;align-items:center;gap:6px;font-size:0.58rem;color:var(--text-dim)}
+.conf-track{width:60px;height:5px;background:var(--border);border-radius:3px;overflow:hidden}
+.conf-track-fill{height:100%;border-radius:3px}
+.chunk-document{background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.chunk-doc-header{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--bg)}
+.doc-icon{font-size:0.85rem}
+.doc-name{font-size:0.62rem;font-weight:700;color:var(--text-bright);flex:1}
+.doc-date{font-size:0.54rem;color:var(--text-dim)}
+.chunk-text-wrap{padding:12px;position:relative}
+.chunk-text{font-family:'Space Mono',monospace;font-size:0.63rem;line-height:1.75;color:var(--text);white-space:pre-wrap}
+.chunk-highlight{background:#fef08a;border-radius:2px;padding:0 1px;color:#713f12;font-weight:700}
+.chunk-context-before,.chunk-context-after{font-size:0.58rem;color:var(--text-dim);font-style:italic;line-height:1.6}
+.chunk-divider{border:none;border-top:1px dashed var(--border);margin:8px 0}
+.modal-footer-note{font-size:0.55rem;color:var(--text-dim);line-height:1.5}
+.btn-open-source{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:7px 16px;font-family:'Space Mono',monospace;font-size:0.6rem;font-weight:700;cursor:pointer;white-space:nowrap;transition:background 0.15s;letter-spacing:0.06em}
+.btn-open-source:hover,.btn-open-source:active{background:#1d4ed8}
+.all-chunks-list{display:flex;flex-direction:column;gap:10px}
+.sidebar-label{font-size:0.52rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px}
+.info-empty{color:var(--text-dim);font-size:0.61rem;line-height:1.8;text-align:center;margin-top:20px}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* ═══════════════════════════════════════════════
+   DESKTOP LAYOUT  (≥769px)
+═══════════════════════════════════════════════ */
+body[data-layout="desktop"] .main {
+  display:flex; flex:1; overflow:hidden;
+}
+body[data-layout="desktop"] .sidebar {
+  width:276px; flex-shrink:0; background:var(--surface);
+  border-right:1px solid var(--border); display:flex;
+  flex-direction:column; overflow:hidden; box-shadow:1px 0 4px var(--shadow);
+}
+body[data-layout="desktop"] .sidebar-section {
+  padding:14px 16px; border-bottom:1px solid var(--border);
+}
+body[data-layout="desktop"] .query-wrap{position:relative}
+body[data-layout="desktop"] .query-btn-desktop {
+  position:absolute; bottom:7px; right:7px;
+  background:var(--accent); color:#fff; border:none;
+  border-radius:4px; padding:4px 10px;
+  font-family:'Space Mono',monospace; font-size:0.58rem;
+  font-weight:700; cursor:pointer; letter-spacing:0.08em; transition:background 0.15s;
+}
+body[data-layout="desktop"] .query-btn-desktop:hover{background:#1d4ed8}
+body[data-layout="desktop"] .info-panel{flex:1;overflow-y:auto;padding:14px 16px}
+body[data-layout="desktop"] .modal-overlay{align-items:center;justify-content:center}
+body[data-layout="desktop"] .modal {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:12px; width:620px; max-width:94vw; max-height:82vh;
+  display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.22);
+  animation:modalIn 0.2s ease;
+}
+@keyframes modalIn{from{opacity:0;transform:scale(0.96) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+body[data-layout="desktop"] .modal-header {
+  padding:16px 20px 12px; border-bottom:1px solid var(--border);
+  display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+}
+body[data-layout="desktop"] .modal-close {
+  background:none; border:1px solid var(--border); border-radius:6px;
+  width:28px; height:28px; cursor:pointer; font-size:0.85rem;
+  color:var(--text-dim); flex-shrink:0; transition:background 0.12s;
+  display:flex; align-items:center; justify-content:center;
+}
+body[data-layout="desktop"] .modal-close:hover{background:var(--surface2)}
+body[data-layout="desktop"] .modal-footer {
+  padding:10px 20px 14px; border-top:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+}
+/* Hide mobile-only elements on desktop */
+body[data-layout="desktop"] .mobile-only { display:none !important; }
+
+/* ═══════════════════════════════════════════════
+   MOBILE LAYOUT  (≤768px)
+═══════════════════════════════════════════════ */
+body[data-layout="mobile"] .main {
+  display:flex; flex:1; overflow:hidden; flex-direction:column;
+}
+body[data-layout="mobile"] .sidebar { display:none !important; }
+body[data-layout="mobile"] .desktop-only { display:none !important; }
+
+/* Bottom nav */
+body[data-layout="mobile"] .bottom-nav {
+  height:60px; background:var(--surface); border-top:1px solid var(--border);
+  display:flex; flex-shrink:0; box-shadow:0 -1px 6px var(--shadow); z-index:100;
+}
+.nav-tab {
+  flex:1; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:4px; cursor:pointer; padding:6px 0;
+  border:none; background:none; color:var(--text-dim);
+  font-family:'Space Mono',monospace; font-size:0.46rem;
+  letter-spacing:0.06em; text-transform:uppercase; position:relative;
+}
+.nav-tab.active{color:var(--accent)}
+.nav-tab.active::before{content:'';position:absolute;top:0;left:20%;right:20%;height:2px;background:var(--accent);border-radius:0 0 3px 3px}
+.nav-icon{font-size:1.1rem}
+
+/* Tab views */
+.tab-view{display:none;height:100%;flex-direction:column;overflow:hidden}
+.tab-view.active{display:flex}
+
+/* Node panel (mobile slide-up) */
+body[data-layout="mobile"] .node-panel {
+  position:absolute; bottom:0; left:0; right:0;
+  background:var(--surface); border-top:1px solid var(--border);
+  border-radius:16px 16px 0 0; padding:0 16px 20px;
+  transform:translateY(100%); transition:transform 0.28s cubic-bezier(0.32,0.72,0,1);
+  z-index:50; max-height:62%; overflow-y:auto;
+  box-shadow:0 -4px 24px var(--shadow-strong);
+}
+body[data-layout="mobile"] .node-panel.open{transform:translateY(0)}
+.node-panel-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:12px auto 14px}
+.node-panel-close{position:absolute;top:12px;right:16px;background:var(--surface2);border:none;border-radius:50%;width:28px;height:28px;font-size:0.75rem;cursor:pointer;color:var(--text-dim);display:flex;align-items:center;justify-content:center}
+
+/* Mobile query tab */
+body[data-layout="mobile"] .query-tab-inner{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+body[data-layout="mobile"] .query-card,.filter-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 1px 4px var(--shadow)}
+body[data-layout="mobile"] .query-input{font-size:0.72rem;height:80px;padding:12px 14px}
+body[data-layout="mobile"] .query-btn-mobile{width:100%;margin-top:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px;font-family:'Space Mono',monospace;font-size:0.7rem;font-weight:700;cursor:pointer;letter-spacing:0.08em;transition:background 0.15s}
+body[data-layout="mobile"] .query-btn-mobile:active{background:#1d4ed8;transform:scale(0.98)}
+.query-suggestions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.suggestion-chip{padding:5px 11px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;font-size:0.57rem;color:var(--text-dim);cursor:pointer;transition:border-color 0.15s,color 0.15s}
+.suggestion-chip:active{border-color:var(--accent);color:var(--accent)}
+
+/* Mobile filters tab */
+body[data-layout="mobile"] .filters-tab-inner{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+body[data-layout="mobile"] .edge-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+body[data-layout="mobile"] .edge-item{display:flex;align-items:center;gap:7px;font-size:0.58rem;color:var(--text-dim);cursor:pointer;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);transition:background 0.12s;user-select:none}
+body[data-layout="mobile"] .edge-item.active{color:var(--text);background:var(--surface)}
+body[data-layout="mobile"] .edge-item.inactive{opacity:0.35}
+.section-label{font-size:0.5rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px}
+
+/* Mobile modal — sheet from bottom */
+body[data-layout="mobile"] .modal-overlay{align-items:flex-end;justify-content:center}
+body[data-layout="mobile"] .modal{background:var(--surface);border:1px solid var(--border);border-radius:20px 20px 0 0;width:100%;max-height:88dvh;display:flex;flex-direction:column;box-shadow:0 -8px 40px rgba(0,0,0,0.2);animation:slideUp 0.25s cubic-bezier(0.32,0.72,0,1)}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:12px auto 4px;flex-shrink:0}
+body[data-layout="mobile"] .modal-header{padding:8px 18px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-shrink:0}
+body[data-layout="mobile"] .modal-close{background:var(--surface2);border:1px solid var(--border);border-radius:50%;width:30px;height:30px;font-size:0.75rem;cursor:pointer;color:var(--text-dim);flex-shrink:0;display:flex;align-items:center;justify-content:center}
+body[data-layout="mobile"] .modal-footer{padding:12px 18px 20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px;flex-shrink:0}
+body[data-layout="mobile"] .btn-open-source{text-align:center;padding:12px;font-size:0.65rem}
+
+/* Mobile ticker — compact, bottom-left */
+body[data-layout="mobile"] .update-ticker{bottom:12px;right:auto;left:10px;max-width:195px;font-size:0.5rem}
+
+/* Mobile graph zoom buttons */
+.graph-controls{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px;z-index:20}
+.graph-btn{width:36px;height:36px;background:var(--surface);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 4px var(--shadow);font-size:0.9rem;color:var(--text);font-family:'Space Mono',monospace;transition:background 0.12s}
+.graph-btn:hover,.graph-btn:active{background:var(--surface2)}
+body[data-layout="desktop"] .graph-controls{display:none}
+</style>
+</head>
+<body>
+
+<!-- HEADER — shared, content adapts via JS -->
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    TEAM<span style="color:var(--accent)">MIND</span>
+  </div>
+  <!-- Desktop meta -->
+  <div class="header-meta desktop-only">
+    <span>4 members · 18 topics · 47 edges</span>
+    <span class="header-sep">|</span>
+    <div class="live-badge"><div class="live-dot"></div>Live · 2m ago</div>
+    <span class="header-sep">|</span>
+    <span>Lateral Knowledge Synthesis</span>
+  </div>
+  <!-- Mobile meta -->
+  <div class="mobile-only" style="display:flex;align-items:center;gap:10px">
+    <span style="font-size:0.52rem;color:var(--text-dim)">4 members · 18 topics</span>
+    <div class="live-badge"><div class="live-dot"></div>Live</div>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main" id="mainContainer">
+
+  <!-- ── DESKTOP SIDEBAR ── -->
+  <div class="sidebar desktop-only">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Query the Hive</div>
+      <div class="query-wrap">
+        <textarea class="query-input" id="queryInputDesktop" placeholder="e.g. 'Who understands auth?' or 'What are the knowledge gaps?'"></textarea>
+        <button class="query-btn-desktop" onclick="runQuery('desktop')">ASK →</button>
+      </div>
+      <div class="query-response" id="queryResponseDesktop"></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Node Types</div>
+      <div class="shape-legend">
+        <div class="shape-legend-item">
+          <svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="none" stroke="#7c3aed" stroke-width="2"/><text x="10" y="14" text-anchor="middle" font-family="Syne,sans-serif" font-size="7" font-weight="800" fill="#7c3aed">AC</text></svg>
+          <span>Team member</span>
+        </div>
+        <div class="shape-legend-item">
+          <svg width="20" height="20"><polygon points="10,2 18,6 18,14 10,18 2,14 2,6" fill="none" stroke="#2563eb" stroke-width="2"/></svg>
+          <span>Topic</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Data Sources</div>
+      <div class="data-sources" id="dataSourcesDesktop">
+        <span class="ds-chip active" style="color:#2563eb;border-color:#2563eb44;background:#eff6ff" data-source="docs" onclick="toggleSource(this)">📄 Docs</span>
+        <span class="ds-chip active" style="color:#7c3aed;border-color:#7c3aed44;background:#f5f3ff" data-source="chat" onclick="toggleSource(this)">💬 Chat</span>
+        <span class="ds-chip active" style="color:#059669;border-color:#05966944;background:#f0fdf4" data-source="git" onclick="toggleSource(this)">⌥ Git</span>
+        <span class="ds-chip active" style="color:#d97706;border-color:#d9770644;background:#fffbeb" data-source="meetings" onclick="toggleSource(this)">🎙 Meetings</span>
+        <span class="ds-chip active" style="color:#db2777;border-color:#db277744;background:#fdf2f8" data-source="updates" onclick="toggleSource(this)">📬 Updates</span>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Edge Types</div>
+      <div class="legend-grid">
+        <div class="legend-item active" data-edge="built"       onclick="toggleEdge(this)"><div class="legend-line" style="background:var(--edge-built)"></div>Built</div>
+        <div class="legend-item active" data-edge="debugged"    onclick="toggleEdge(this)"><div class="legend-line" style="background:var(--edge-debug)"></div>Debugged</div>
+        <div class="legend-item active" data-edge="decided"     onclick="toggleEdge(this)"><div class="legend-line" style="background:var(--edge-decision)"></div>Decided</div>
+        <div class="legend-item active" data-edge="mentioned"   onclick="toggleEdge(this)"><div class="legend-line" style="background:var(--edge-mentioned)"></div>Mentioned</div>
+        <div class="legend-item active" data-edge="dependency"  onclick="toggleEdge(this)"><div class="legend-line" style="background:var(--edge-dependency)"></div>Depends on</div>
+        <div class="legend-item active" data-edge="cooccur"     onclick="toggleEdge(this)"><div class="legend-line" style="background:var(--edge-cooccur)"></div>Co-occurs</div>
+        <div class="legend-item active" data-edge="conflict"    onclick="toggleEdge(this)"><div class="legend-line" style="background:var(--edge-conflict)"></div>Conflict ⚡</div>
+        <div class="legend-item active" data-edge="affected"    onclick="toggleEdge(this)"><div class="legend-line" style="background:var(--edge-affected);height:1px"></div>Affected</div>
+      </div>
+    </div>
+    <div class="info-panel" id="infoPanel">
+      <div class="info-empty">← Click any node<br>to inspect its connections<br><br>Hover edges to see<br>source + confidence<br><br>Click source chips<br>to view origin chunks</div>
+    </div>
+  </div>
+
+  <!-- ── GRAPH AREA (shared between both layouts) ── -->
+  <div id="graphTabWrapper" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+
+    <!-- MOBILE: tab views wrap -->
+    <div class="tab-view active" id="tab-graph" style="flex:1">
+      <div class="graph-area">
+        <svg id="graph-svg"></svg>
+        <!-- Mobile zoom controls -->
+        <div class="graph-controls mobile-only">
+          <button class="graph-btn" onclick="zoomIn()">+</button>
+          <button class="graph-btn" onclick="zoomOut()">−</button>
+          <button class="graph-btn" onclick="resetZoom()">⊙</button>
+        </div>
+        <div class="tooltip" id="tooltip"><div class="tt-name" id="tt-name"></div><div class="tt-meta" id="tt-meta"></div></div>
+        <div class="update-ticker" id="ticker"><div class="ticker-title">⚡ Live Updates</div><div id="tickerItems"></div></div>
+      </div>
+      <!-- Mobile node panel -->
+      <div class="node-panel mobile-only" id="nodePanel">
+        <div class="node-panel-handle"></div>
+        <button class="node-panel-close" onclick="closeNodePanel()">✕</button>
+        <div id="nodePanelContent"></div>
+      </div>
+    </div>
+
+    <!-- MOBILE: Query tab -->
+    <div class="tab-view" id="tab-query">
+      <div class="query-tab-inner">
+        <div class="query-card">
+          <div class="section-label">Query the Hive</div>
+          <textarea class="query-input" id="queryInputMobile" placeholder="e.g. 'Who understands auth?' or 'What are the knowledge gaps?'"></textarea>
+          <button class="query-btn-mobile" onclick="runQuery('mobile')">ASK THE HIVE →</button>
+          <div class="query-suggestions">
+            <span class="suggestion-chip" onclick="setQuery('auth')">auth</span>
+            <span class="suggestion-chip" onclick="setQuery('caching')">caching</span>
+            <span class="suggestion-chip" onclick="setQuery('deployment')">deployment</span>
+            <span class="suggestion-chip" onclick="setQuery('knowledge gaps')">gaps</span>
+            <span class="suggestion-chip" onclick="setQuery('conflict')">conflicts</span>
+            <span class="suggestion-chip" onclick="setQuery('frontend')">frontend</span>
+          </div>
+        </div>
+        <div class="query-response" id="queryResponseMobile"></div>
+        <div class="filter-card">
+          <div class="section-label">Team Members</div>
+          <div id="teamCards" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MOBILE: Filters tab -->
+    <div class="tab-view" id="tab-filters">
+      <div class="filters-tab-inner">
+        <div class="filter-card">
+          <div class="section-label">Node Types</div>
+          <div class="shape-legend">
+            <div class="shape-legend-item">
+              <svg width="22" height="22"><circle cx="11" cy="11" r="9" fill="none" stroke="#7c3aed" stroke-width="2"/><text x="11" y="15" text-anchor="middle" font-family="Syne,sans-serif" font-size="7" font-weight="800" fill="#7c3aed">AC</text></svg>
+              <span>Team member</span>
+            </div>
+            <div class="shape-legend-item">
+              <svg width="22" height="22"><polygon points="11,2 19,6 19,16 11,20 3,16 3,6" fill="none" stroke="#2563eb" stroke-width="2"/></svg>
+              <span>Topic</span>
+            </div>
+          </div>
+        </div>
+        <div class="filter-card">
+          <div class="section-label">Data Sources</div>
+          <div class="data-sources" id="dataSourcesMobile">
+            <span class="ds-chip active" style="color:#2563eb;border-color:#2563eb44;background:#eff6ff" data-source="docs" onclick="toggleSource(this)">📄 Docs</span>
+            <span class="ds-chip active" style="color:#7c3aed;border-color:#7c3aed44;background:#f5f3ff" data-source="chat" onclick="toggleSource(this)">💬 Chat</span>
+            <span class="ds-chip active" style="color:#059669;border-color:#05966944;background:#f0fdf4" data-source="git" onclick="toggleSource(this)">⌥ Git</span>
+            <span class="ds-chip active" style="color:#d97706;border-color:#d9770644;background:#fffbeb" data-source="meetings" onclick="toggleSource(this)">🎙 Meetings</span>
+            <span class="ds-chip active" style="color:#db2777;border-color:#db277744;background:#fdf2f8" data-source="updates" onclick="toggleSource(this)">📬 Updates</span>
+          </div>
+        </div>
+        <div class="filter-card">
+          <div class="section-label">Edge Types</div>
+          <div class="edge-grid">
+            <div class="edge-item active" data-edge="built"      onclick="toggleEdge(this)"><div class="legend-line" style="background:#059669"></div>Built</div>
+            <div class="edge-item active" data-edge="debugged"   onclick="toggleEdge(this)"><div class="legend-line" style="background:#d97706"></div>Debugged</div>
+            <div class="edge-item active" data-edge="decided"    onclick="toggleEdge(this)"><div class="legend-line" style="background:#db2777"></div>Decided</div>
+            <div class="edge-item active" data-edge="mentioned"  onclick="toggleEdge(this)"><div class="legend-line" style="background:#cbd5e1"></div>Mentioned</div>
+            <div class="edge-item active" data-edge="dependency" onclick="toggleEdge(this)"><div class="legend-line" style="background:#93c5fd"></div>Depends on</div>
+            <div class="edge-item active" data-edge="cooccur"    onclick="toggleEdge(this)"><div class="legend-line" style="background:#c4b5fd"></div>Co-occurs</div>
+            <div class="edge-item active" data-edge="conflict"   onclick="toggleEdge(this)"><div class="legend-line" style="background:#ef4444"></div>Conflict ⚡</div>
+            <div class="edge-item active" data-edge="affected"   onclick="toggleEdge(this)"><div class="legend-line" style="background:#94a3b8;height:1px"></div>Affected</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /graphTabWrapper -->
+
+</div><!-- /main -->
+
+<!-- MOBILE BOTTOM NAV -->
+<nav class="bottom-nav mobile-only" id="bottomNav">
+  <button class="nav-tab active" id="nav-graph"   onclick="switchTab('graph')"><span class="nav-icon">⬡</span>Graph</button>
+  <button class="nav-tab"        id="nav-query"   onclick="switchTab('query')"><span class="nav-icon">◎</span>Query</button>
+  <button class="nav-tab"        id="nav-filters" onclick="switchTab('filters')"><span class="nav-icon">⊞</span>Filters</button>
+</nav>
+
+<!-- SOURCE CHUNK MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOverlay(event)">
+  <div class="modal" id="modal">
+    <div class="modal-handle mobile-only"></div>
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-breadcrumb" id="modalBreadcrumb"></div>
+        <div class="modal-title" id="modalTitle"></div>
+        <div class="modal-subtitle" id="modalSubtitle"></div>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('modalOverlay').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer">
+      <div class="modal-footer-note" id="modalFooterNote"></div>
+      <button class="btn-open-source" onclick="alert('In production: opens the full source document')">Open Full Source ↗</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── LAYOUT DETECTION ──────────────────────────────────────────────────────────
+const MOBILE_BP = 768;
+let isMobile = window.innerWidth <= MOBILE_BP;
+
+function applyLayout() {
+  const was = isMobile;
+  isMobile = window.innerWidth <= MOBILE_BP;
+  document.body.setAttribute('data-layout', isMobile ? 'mobile' : 'desktop');
+  if (was !== isMobile) {
+    // layout changed — reinit graph after repaint
+    setTimeout(initGraph, 60);
+  }
+}
+
+applyLayout();
+window.addEventListener('resize', applyLayout);
+
+// ── TAB SWITCHING (mobile) ────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.getElementById('nav-' + tab).classList.add('active');
+  if (tab === 'graph') setTimeout(() => simulation && simulation.alpha(0.05).restart(), 50);
+}
+
+// ── SOURCE CHUNK DATA ─────────────────────────────────────────────────────────
+const SOURCE_CHUNKS = {
+  'alex-auth-git': {
+    source:'git', icon:'⌥', docName:'auth-service / commits (last 30 days)', docDate:'Most recent: today, 09:14',
+    contextBefore:'... merged PR #247 — token refresh race condition fix\n\ncommit a3f91b2  •  Alex Chen  •  2 days ago',
+    highlight:'refactor(auth): extract session validation into AuthGuard middleware\n\nMoves session expiry logic out of individual route handlers into a\ncentral guard. This ensures consistent 401 responses and removes\nduplicated expiry checks across 8 endpoints. Token blacklist check\nnow runs in O(1) via Redis SET lookup.',
+    contextAfter:'\ncommit 7d2ca14  •  Alex Chen  •  4 days ago\nfix(auth): handle concurrent refresh requests with mutex lock ...',
+    confidence:0.95, edgeType:'built', inferred:'High confidence — 42 commits attributed to this author in this module over 6 months.',
+  },
+  'alex-auth-meetings': {
+    source:'meetings', icon:'🎙', docName:'Architecture Review — Auth Redesign', docDate:'Transcript · 3 weeks ago',
+    contextBefore:'...[Maria]: I think the current session handling is too tightly coupled to the DB layer.\n\n[Alex]: ',
+    highlight:'Yeah, that\'s exactly why I proposed moving to stateless JWTs for most routes and keeping server-side sessions only for sensitive operations like payment flows. The hybrid approach gives us the revocation capability we need without sacrificing performance on the read-heavy endpoints.',
+    contextAfter:'\n[Sarah]: That aligns with what I was thinking for the schema side — we could keep a slim revocation table rather than full session rows...',
+    confidence:0.88, edgeType:'decided', inferred:'High confidence — speaker attribution confirmed via voice diarization.',
+  },
+  'sarah-auth-git': {
+    source:'git', icon:'⌥', docName:'auth-service / session-handler.ts', docDate:'commit f2e8a01 · Sarah Kim · 14 days ago',
+    contextBefore:'// TODO: investigate expiry edge case reported in #issue-389\n\n',
+    highlight:'// Fixed: session expiry timestamp was being compared against server\n// creation time rather than last-activity time.\n// Root cause: Redis TTL was reset on every write, but the JWT exp\n// claim was using a fixed 8h window from issuance, not last refresh.\nconst effectiveExpiry = Math.min(jwtExp, lastActivity + SESSION_IDLE_LIMIT);',
+    contextAfter:'\n// This resolves the bug where users were logged out mid-session\n// after exactly 8 hours regardless of activity. Closes #389.',
+    confidence:0.75, edgeType:'debugged', inferred:'Confident — commit message and code comment explicitly describe the debugging work.',
+  },
+  'maria-ui-git': {
+    source:'git', icon:'⌥', docName:'ui-components / CHANGELOG.md', docDate:'v2.4.0 · Maria Santos · 1 week ago',
+    contextBefore:'## v2.4.0\n\n',
+    highlight:'### Breaking Changes\n- `<Button>` variant prop renamed from `type` to `variant` for HTML semantics\n- Removed deprecated `size="tiny"` — use `size="xs"` instead\n\n### New Components\n- `<DataTable>` with virtualized rows, sorting, and column pinning\n- `<CommandPalette>` — keyboard-driven action launcher\n- `<PresenceIndicator>` — real-time avatar cluster for collaborative UI',
+    contextAfter:'\n### Fixes\n- Focus ring now respects `prefers-reduced-motion`\n- `<Select>` dropdown no longer escapes viewport on small screens ...',
+    confidence:0.97, edgeType:'built', inferred:'Very high confidence — 78 commits, CODEOWNERS lists Maria as sole maintainer of /ui-components.',
+  },
+  'dev-ci-docs': {
+    source:'docs', icon:'📄', docName:'CI/CD Runbook — Engineering Wiki', docDate:'Last edited by Dev Patel · 3 days ago',
+    contextBefore:'## Pipeline Architecture\n\nThe following describes the current CI/CD setup maintained by the infrastructure team.\n\n',
+    highlight:'All pull requests trigger a 4-stage pipeline:\n1. **Lint + type-check** (≈45s) — ESLint, TypeScript strict mode\n2. **Unit tests** (≈2m) — Jest, 94% coverage gate\n3. **Integration tests** (≈4m) — Docker Compose, ephemeral DB\n4. **Staging deploy** (≈3m) — Kubernetes rolling update, smoke tests\n\nProduction deploys require manual approval from a CODEOWNER after staging passes. Rollback is automated if error rate exceeds 2% within 10 minutes of deploy.',
+    contextAfter:'\n## Common Failures\n\nSee the Troubleshooting section for known flaky tests and workarounds ...',
+    confidence:0.96, edgeType:'built', inferred:'Very high confidence — document authored and maintained exclusively by Dev.',
+  },
+  'alex-sarah-conflict-chat': {
+    source:'chat', icon:'💬', docName:'#backend — Slack · thread', docDate:'6 days ago',
+    contextBefore:'[Sarah Kim 14:02] Just pushed the Liquibase migration config. Should be ready to test.\n\n',
+    highlight:'[Alex Chen 14:19] Hey Sarah — quick note, I\'m not convinced Liquibase is the right call here. Flyway has much simpler SQL-based migrations and we don\'t need the XML overhead. I raised this in the architecture review but it didn\'t get fully resolved. Can we revisit before this lands in main?\n\n[Sarah Kim 14:31] I hear you, but we already have 17 migrations in Liquibase and rollback support is built in. Switching now would mean rewriting everything. I think the switching cost outweighs the simplicity gain.\n\n[Alex Chen 14:38] Fair point on migration count, but I\'m still worried about the long-term complexity. What if we timebox a spike?',
+    contextAfter:'\n[Sarah Kim 14:45] I\'m open to a spike if we can scope it. Let\'s bring it to the next architecture meeting. ...',
+    confidence:0.85, edgeType:'conflict', inferred:'High confidence — explicit disagreement detected, both parties named, unresolved as of last message.',
+  },
+  'sarah-caching-meetings': {
+    source:'meetings', icon:'🎙', docName:'Backend Sync · Weekly · Transcript', docDate:'2 weeks ago',
+    contextBefore:'[Dev]: So we keep running into cache invalidation on deploy. Whatever we pick needs to be deploy-aware.\n\n[Sarah]: ',
+    highlight:'Right, so my proposal is Redis with a write-through pattern for the user profile cache and explicit TTLs for everything else. I\'ve written up the guidelines — basically: anything with a known mutation path gets write-through, anything read-heavy but eventually consistent gets a 5-minute TTL with a cache-aside pattern. We don\'t do cache-on-read for anything that touches payment data.',
+    contextAfter:'\n[Dev]: That works for me from the infra side — I can set up the Redis cluster in the staging env this week. [Sarah]: Great, I\'ll link the guidelines doc in the wiki ...',
+    confidence:0.78, edgeType:'decided', inferred:'Confident — speaker attribution confirmed, decision documented in subsequent wiki update.',
+  },
+  'dev-deploy-git': {
+    source:'git', icon:'⌥', docName:'infra / k8s / production', docDate:'Last commit: Dev Patel · yesterday',
+    contextBefore:'# Helm values — production cluster\napiVersion: v2\n\n',
+    highlight:'replicaCount: 3\nrollingUpdate:\n  maxSurge: 1\n  maxUnavailable: 0\nreadinessProbe:\n  httpGet:\n    path: /healthz\n    port: 8080\n  initialDelaySeconds: 10\n  periodSeconds: 5\nresources:\n  requests:\n    memory: "256Mi"\n    cpu: "250m"\n  limits:\n    memory: "512Mi"\n    cpu: "500m"',
+    contextAfter:'\n# Secrets injected at runtime via Vault agent sidecar\n# See secrets/vault-config.yaml for rotation policy ...',
+    confidence:0.92, edgeType:'built', inferred:'Very high confidence — CODEOWNERS attributes /infra to Dev exclusively.',
+  },
+  'maria-a11y-docs': {
+    source:'docs', icon:'📄', docName:'Accessibility Standards — Engineering Wiki', docDate:'Last edited by Maria Santos · 5 weeks ago',
+    contextBefore:'## Status: Draft — Partial Implementation\n\n',
+    highlight:'Our target is WCAG 2.1 AA compliance across all customer-facing surfaces. Currently implemented: keyboard navigation for primary flows, ARIA labels on interactive elements, focus trap in modals. Not yet implemented: color contrast audit for data visualizations, screen reader testing on mobile (iOS VoiceOver, Android TalkBack), skip-navigation links on all pages.',
+    contextAfter:'\n## Priority Next Steps\n- Complete color contrast audit (assigned: Maria)\n- Engage accessibility QA vendor for screen reader testing (budget TBD) ...',
+    confidence:0.70, edgeType:'decided', inferred:'Moderate confidence — document is a draft with partial implementation status noted.',
+  },
+};
+
+const EDGE_CHUNKS = {
+  'alex-auth-built':          ['alex-auth-git','alex-auth-meetings'],
+  'alex-auth-mentioned':      ['alex-auth-meetings'],
+  'sarah-auth-debugged':      ['sarah-auth-git'],
+  'maria-ui-built':           ['maria-ui-git'],
+  'dev-ci-built':             ['dev-ci-docs'],
+  'dev-deploy-built':         ['dev-deploy-git'],
+  'alex-migrations-conflict': ['alex-sarah-conflict-chat'],
+  'sarah-caching-decided':    ['sarah-caching-meetings'],
+  'maria-a11y-decided':       ['maria-a11y-docs'],
+};
+
+function getEdgeChunkKey(edge) {
+  const s = edge.source.id||edge.source, t = edge.target.id||edge.target;
+  for (const k of [`${s}-${t}-${edge.type}`,`${t}-${s}-${edge.type}`,`${s}-${t}`,`${t}-${s}`]) {
+    if (EDGE_CHUNKS[k]) return k;
+  }
+  return null;
+}
+
+const sourceStyles = {
+  git:     {color:'#059669',bg:'#f0fdf4',border:'#059669'},
+  docs:    {color:'#2563eb',bg:'#eff6ff',border:'#2563eb'},
+  chat:    {color:'#7c3aed',bg:'#f5f3ff',border:'#7c3aed'},
+  meetings:{color:'#d97706',bg:'#fffbeb',border:'#d97706'},
+  updates: {color:'#db2777',bg:'#fdf2f8',border:'#db2777'},
+};
+const sourceIcons = {git:'⌥',docs:'📄',chat:'💬',meetings:'🎙',updates:'📬'};
+
+// ── GRAPH DATA ────────────────────────────────────────────────────────────────
+const PEOPLE = [
+  {id:'alex', label:'Alex Chen',   role:'Backend Lead',      avatar:'AC',color:'#7c3aed',cluster:'people'},
+  {id:'maria',label:'Maria Santos',role:'Frontend Engineer', avatar:'MS',color:'#db2777',cluster:'people'},
+  {id:'dev',  label:'Dev Patel',   role:'DevOps / Infra',    avatar:'DP',color:'#d97706',cluster:'people'},
+  {id:'sarah',label:'Sarah Kim',   role:'Full-stack & Arch', avatar:'SK',color:'#059669',cluster:'people'},
+];
+const TOPICS = [
+  {id:'auth',       label:'Auth Service',     cluster:'security',depth:4,freshness:0.95},
+  {id:'tokens',     label:'Token Mgmt',       cluster:'security',depth:3,freshness:0.88},
+  {id:'oauth',      label:'OAuth Flow',       cluster:'security',depth:2,freshness:0.60},
+  {id:'permissions',label:'Permissions',      cluster:'security',depth:2,freshness:0.72},
+  {id:'db',         label:'Database Layer',   cluster:'data',    depth:4,freshness:0.91},
+  {id:'migrations', label:'DB Migrations',    cluster:'data',    depth:3,freshness:0.45},
+  {id:'caching',    label:'Caching Strategy', cluster:'data',    depth:3,freshness:0.80},
+  {id:'search',     label:'Search Index',     cluster:'data',    depth:2,freshness:0.55},
+  {id:'ui',         label:'UI Components',    cluster:'frontend',depth:4,freshness:0.93},
+  {id:'state',      label:'State Mgmt',       cluster:'frontend',depth:3,freshness:0.70},
+  {id:'routing',    label:'Client Routing',   cluster:'frontend',depth:2,freshness:0.65},
+  {id:'a11y',       label:'Accessibility',    cluster:'frontend',depth:1,freshness:0.30},
+  {id:'ci',         label:'CI / CD Pipeline', cluster:'infra',   depth:4,freshness:0.88},
+  {id:'deploy',     label:'Deployment',       cluster:'infra',   depth:3,freshness:0.75},
+  {id:'monitoring', label:'Monitoring',       cluster:'infra',   depth:3,freshness:0.82},
+  {id:'secrets',    label:'Secrets Mgmt',     cluster:'infra',   depth:2,freshness:0.50},
+  {id:'api',        label:'API Design',       cluster:'api',     depth:4,freshness:0.90},
+  {id:'ratelimit',  label:'Rate Limiting',    cluster:'api',     depth:2,freshness:0.68},
+];
+const EDGES_RAW = [
+  {source:'alex', target:'auth',       type:'built',      confidence:0.95,sources:['git','meetings'],note:'42 commits, architectural decisions'},
+  {source:'alex', target:'tokens',     type:'built',      confidence:0.90,sources:['git','docs'],    note:'Primary author of token refresh logic'},
+  {source:'alex', target:'db',         type:'debugged',   confidence:0.80,sources:['chat','git'],    note:'Resolved N+1 query issue'},
+  {source:'alex', target:'api',        type:'decided',    confidence:0.85,sources:['meetings','docs'],note:'Proposed REST-first strategy'},
+  {source:'alex', target:'ratelimit',  type:'built',      confidence:0.88,sources:['git'],           note:'Token bucket implementation'},
+  {source:'alex', target:'caching',    type:'mentioned',  confidence:0.45,sources:['chat'],          note:'Brief mention in #backend'},
+  {source:'alex', target:'secrets',    type:'affected',   confidence:0.60,sources:['updates'],       note:'Blocked twice by secrets rotation'},
+  {source:'alex', target:'migrations', type:'conflict',   confidence:0.85,sources:['chat','meetings'],note:'Disagrees with rollback strategy'},
+  {source:'maria',target:'ui',         type:'built',      confidence:0.97,sources:['git','docs'],    note:'78 commits, component library owner'},
+  {source:'maria',target:'state',      type:'built',      confidence:0.88,sources:['git','meetings'],note:'Migrated to Zustand from Redux'},
+  {source:'maria',target:'routing',    type:'built',      confidence:0.80,sources:['git'],           note:'Route guards + lazy loading'},
+  {source:'maria',target:'a11y',       type:'decided',    confidence:0.70,sources:['docs','meetings'],note:'Defined a11y standards, partial impl.'},
+  {source:'maria',target:'auth',       type:'affected',   confidence:0.72,sources:['chat','updates'],note:'Login UI depends on auth service'},
+  {source:'maria',target:'api',        type:'affected',   confidence:0.65,sources:['chat'],          note:'Frontend contract consumer'},
+  {source:'dev',  target:'ci',         type:'built',      confidence:0.96,sources:['git','docs'],    note:'Built entire pipeline from scratch'},
+  {source:'dev',  target:'deploy',     type:'built',      confidence:0.92,sources:['git','meetings'],note:'Kubernetes configs, Helm charts'},
+  {source:'dev',  target:'monitoring', type:'built',      confidence:0.87,sources:['git','docs'],    note:'Grafana dashboards + alert rules'},
+  {source:'dev',  target:'secrets',    type:'built',      confidence:0.90,sources:['git','docs'],    note:'Vault integration, rotation policy'},
+  {source:'dev',  target:'db',         type:'affected',   confidence:0.60,sources:['updates'],       note:'DB migration failures broke CI twice'},
+  {source:'dev',  target:'caching',    type:'debugged',   confidence:0.75,sources:['chat','git'],    note:'Cache invalidation on deploy'},
+  {source:'sarah',target:'db',         type:'built',      confidence:0.93,sources:['git','docs'],    note:'Schema design, ORM abstractions'},
+  {source:'sarah',target:'migrations', type:'built',      confidence:0.88,sources:['git'],           note:'17 migration files authored'},
+  {source:'sarah',target:'api',        type:'decided',    confidence:0.90,sources:['meetings','docs'],note:'Co-designed versioning strategy'},
+  {source:'sarah',target:'auth',       type:'debugged',   confidence:0.75,sources:['git','chat'],    note:'Traced session expiry bug'},
+  {source:'sarah',target:'search',     type:'built',      confidence:0.82,sources:['git','docs'],    note:'Elasticsearch integration'},
+  {source:'sarah',target:'caching',    type:'decided',    confidence:0.78,sources:['meetings','docs'],note:'Chose Redis, wrote guidelines'},
+  {source:'sarah',target:'permissions',type:'decided',    confidence:0.80,sources:['docs','meetings'],note:'RBAC model design'},
+  {source:'auth',      target:'tokens',     type:'dependency',confidence:0.99,sources:['docs'],          note:'Auth requires token management'},
+  {source:'auth',      target:'permissions',type:'dependency',confidence:0.95,sources:['docs'],          note:'Auth checks permissions per request'},
+  {source:'auth',      target:'db',         type:'dependency',confidence:0.88,sources:['git'],           note:'Session store in DB'},
+  {source:'tokens',    target:'caching',    type:'cooccur',   confidence:0.72,sources:['chat','updates'],note:'Frequently discussed together'},
+  {source:'db',        target:'migrations', type:'dependency',confidence:0.99,sources:['docs'],          note:'Schema evolution'},
+  {source:'db',        target:'caching',    type:'cooccur',   confidence:0.80,sources:['meetings'],      note:'Cache-aside pattern discussions'},
+  {source:'api',       target:'auth',       type:'dependency',confidence:0.92,sources:['docs'],          note:'All API routes protected by auth'},
+  {source:'api',       target:'ratelimit',  type:'dependency',confidence:0.90,sources:['docs','git'],    note:'Rate limiting middleware'},
+  {source:'ci',        target:'deploy',     type:'dependency',confidence:0.97,sources:['git'],           note:'CI triggers deployment'},
+  {source:'deploy',    target:'secrets',    type:'dependency',confidence:0.85,sources:['docs'],          note:'Deploy injects secrets at runtime'},
+  {source:'deploy',    target:'db',         type:'cooccur',   confidence:0.68,sources:['meetings'],      note:'Migration runs on deploy'},
+  {source:'ui',        target:'state',      type:'dependency',confidence:0.90,sources:['git'],           note:'Components consume global state'},
+  {source:'ui',        target:'routing',    type:'cooccur',   confidence:0.75,sources:['git'],           note:'Often modified together'},
+  {source:'monitoring',target:'ci',         type:'cooccur',   confidence:0.65,sources:['updates'],       note:'Alerts triggered CI improvements'},
+  {source:'search',    target:'db',         type:'dependency',confidence:0.82,sources:['git','docs'],    note:'Search index synced from DB'},
+  {source:'oauth',     target:'tokens',     type:'dependency',confidence:0.91,sources:['docs'],          note:'OAuth produces tokens'},
+];
+
+const clusterCenters = {
+  people:   {x:0.50,y:0.12},
+  security: {x:0.20,y:0.46},
+  data:     {x:0.38,y:0.78},
+  frontend: {x:0.75,y:0.60},
+  infra:    {x:0.82,y:0.26},
+  api:      {x:0.54,y:0.46},
+};
+const clusterColorHex = {
+  security:'#2563eb',data:'#d97706',frontend:'#db2777',infra:'#7c3aed',api:'#059669',people:'#6b7280',
+};
+const edgeColors = {
+  built:'#059669',debugged:'#d97706',decided:'#db2777',mentioned:'#cbd5e1',
+  affected:'#94a3b8',dependency:'#93c5fd',cooccur:'#c4b5fd',conflict:'#ef4444',
+};
+const edgeWidths = {built:2.5,debugged:2,decided:2,mentioned:1,affected:1,dependency:1.5,cooccur:1,conflict:2.5};
+
+let nodes=[],links=[];
+let activeEdgeTypes = new Set(['built','debugged','decided','mentioned','affected','dependency','cooccur','conflict']);
+let activeSources   = new Set(['docs','chat','git','meetings','updates']);
+
+// ── HEXAGON ───────────────────────────────────────────────────────────────────
+function hexPath(r) {
+  const pts=[];
+  for(let i=0;i<6;i++){const a=(Math.PI/180)*(60*i-30);pts.push([r*Math.cos(a),r*Math.sin(a)]);}
+  return pts.map((p,i)=>`${i===0?'M':'L'}${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ')+' Z';
+}
+
+// ── GRAPH ENGINE ──────────────────────────────────────────────────────────────
+let simulation,svg,linkG,nodeG,labelG,width,height,zoomBehavior,mainG;
+
+function nodeRadius(d) {
+  if(d.type==='person') return isMobile?17:20;
+  return (isMobile?7:8)+(d.depth||1)*(isMobile?2.5:3);
+}
+
+function initGraph() {
+  const container = document.getElementById('graph-svg');
+  const rect = container.getBoundingClientRect();
+  width=rect.width; height=rect.height;
+  if(width<1||height<1) return;
+
+  svg=d3.select('#graph-svg');
+  svg.selectAll('*').remove();
+
+  const defs=svg.append('defs');
+  const sh=defs.append('filter').attr('id','node-shadow').attr('x','-30%').attr('y','-30%').attr('width','160%').attr('height','160%');
+  sh.append('feDropShadow').attr('dx',0).attr('dy',2).attr('stdDeviation',3).attr('flood-color','rgba(0,0,0,0.12)');
+  const shh=defs.append('filter').attr('id','node-shadow-hover').attr('x','-50%').attr('y','-50%').attr('width','200%').attr('height','200%');
+  shh.append('feDropShadow').attr('dx',0).attr('dy',4).attr('stdDeviation',8).attr('flood-color','rgba(0,0,0,0.2)');
+
+  svg.append('rect').attr('width',width).attr('height',height).attr('fill','#f4f2ee');
+
+  const haloG=svg.append('g');
+  Object.entries(clusterCenters).forEach(([name,center])=>{
+    if(name==='people')return;
+    haloG.append('ellipse')
+      .attr('cx',center.x*width).attr('cy',center.y*height)
+      .attr('rx',isMobile?80:100).attr('ry',isMobile?62:78)
+      .attr('fill',clusterColorHex[name]).attr('opacity',0.04);
+    haloG.append('text').attr('class','cluster-label')
+      .attr('x',center.x*width).attr('y',center.y*height-(isMobile?70:85))
+      .attr('text-anchor','middle')
+      .attr('fill',clusterColorHex[name]).attr('opacity',0.3)
+      .text(name.toUpperCase());
+  });
+
+  zoomBehavior=d3.zoom().scaleExtent([0.25,4]).on('zoom',e=>mainG.attr('transform',e.transform));
+  svg.call(zoomBehavior);
+
+  mainG=svg.append('g');
+  linkG=mainG.append('g');
+  nodeG=mainG.append('g');
+  labelG=mainG.append('g');
+
+  nodes=[...PEOPLE.map(p=>({...p,type:'person'})),...TOPICS.map(t=>({...t,type:'topic'}))];
+  links=EDGES_RAW.map(e=>({...e}));
+
+  nodes.forEach(n=>{
+    const c=clusterCenters[n.cluster];
+    n.x=c.x*width+(Math.random()-0.5)*60;
+    n.y=c.y*height+(Math.random()-0.5)*60;
+  });
+
+  simulation=d3.forceSimulation(nodes)
+    .force('link',d3.forceLink(links).id(d=>d.id).distance(d=>{
+      if(d.type==='dependency'||d.type==='cooccur') return isMobile?55:65;
+      if(d.type==='mentioned'||d.type==='affected') return isMobile?95:115;
+      return isMobile?75:90;
+    }).strength(0.4))
+    .force('charge',d3.forceManyBody().strength(d=>d.type==='person'?(isMobile?-230:-300):(isMobile?-140:-170)))
+    .force('cluster',alpha=>{
+      nodes.forEach(n=>{
+        const c=clusterCenters[n.cluster];
+        if(!c)return;
+        n.vx+=(c.x*width-n.x)*0.18*alpha;
+        n.vy+=(c.y*height-n.y)*0.18*alpha;
+      });
+    })
+    .force('collision',d3.forceCollide(d=>nodeRadius(d)+11))
+    .on('tick',ticked);
+
+  renderLinks();
+  renderNodes();
+  renderLabels();
+
+  svg.on('click.bg',e=>{
+    if(e.target.tagName==='rect'||e.target===svg.node()){
+      resetHighlight();
+      if(isMobile) closeNodePanel();
+      else document.getElementById('infoPanel').innerHTML='<div class="info-empty">← Click any node<br>to inspect its connections<br><br>Hover edges to see<br>source + confidence<br><br>Click source chips<br>to view origin chunks</div>';
+    }
+  });
+}
+
+function ticked() {
+  linkG.selectAll('.edge').attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+  nodeG.selectAll('.node-g').attr('transform',d=>`translate(${d.x},${d.y})`);
+  if(isMobile){
+    labelG.selectAll('.node-label').attr('transform',d=>`translate(${d.x},${d.y})`);
+  } else {
+    labelG.selectAll('.node-label').attr('x',d=>d.x).attr('y',d=>d.y+nodeRadius(d)+12);
+  }
+}
+
+function renderLinks() {
+  const visible=links.filter(l=>activeEdgeTypes.has(l.type)&&(l.sources||[]).some(s=>activeSources.has(s)));
+  const edge=linkG.selectAll('.edge').data(visible,d=>`${d.source.id||d.source}-${d.target.id||d.target}-${d.type}`);
+  edge.exit().remove();
+  const entered=edge.enter().append('line')
+    .attr('class','edge')
+    .attr('stroke',d=>edgeColors[d.type]||'#ccc')
+    .attr('stroke-width',d=>edgeWidths[d.type]||1)
+    .attr('stroke-opacity',d=>d.type==='dependency'||d.type==='cooccur'?0.35:0.55)
+    .attr('stroke-dasharray',d=>
+      d.type==='dependency'?'5,3':d.type==='cooccur'?'2,4':
+      d.type==='mentioned'||d.type==='affected'?'1,4':null)
+    .style('cursor','pointer');
+  if(isMobile){
+    entered.on('click',(event,d)=>{ event.stopPropagation(); const ck=getEdgeChunkKey(d); if(ck)openSourceModal(ck,null,d.source.id||d.source,d.target.id||d.target,d.type); });
+  } else {
+    entered.on('mouseenter',showEdgeTooltip).on('mouseleave',hideTooltip);
+  }
+}
+
+function renderNodes() {
+  const ng=nodeG.selectAll('.node-g').data(nodes,d=>d.id);
+  ng.exit().remove();
+  const entered=ng.enter().append('g').attr('class','node-g').style('cursor','pointer')
+    .call(d3.drag()
+      .on('start',(e,d)=>{if(!e.active)simulation.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;})
+      .on('drag', (e,d)=>{d.fx=e.x;d.fy=e.y;})
+      .on('end',  (e,d)=>{if(!e.active)simulation.alphaTarget(0);d.fx=null;d.fy=null;}))
+    .on('click',(e,d)=>{e.stopPropagation();selectNode(d);});
+
+  if(!isMobile){
+    entered.on('mouseenter',showNodeTooltip).on('mouseleave',hideTooltip);
+  }
+
+  const persons=entered.filter(d=>d.type==='person');
+  persons.append('circle').attr('r',d=>nodeRadius(d)).attr('fill','#fff').attr('stroke',d=>d.color).attr('stroke-width',2.5).style('filter','url(#node-shadow)');
+  persons.append('circle').attr('r',d=>nodeRadius(d)-3).attr('fill',d=>d.color).attr('opacity',0.08);
+  persons.append('text').attr('text-anchor','middle').attr('dominant-baseline','middle')
+    .attr('font-family','Syne,sans-serif').attr('font-weight','800').attr('font-size','8px')
+    .attr('fill',d=>d.color).attr('pointer-events','none').text(d=>d.avatar);
+
+  const topics=entered.filter(d=>d.type==='topic');
+  topics.append('path')
+    .attr('d',d=>hexPath(nodeRadius(d)))
+    .attr('fill',d=>{const hex=clusterColorHex[d.cluster]||'#2563eb';const a=Math.floor((d.freshness||0.5)*0.12*255).toString(16).padStart(2,'0');return hex+a;})
+    .attr('stroke',d=>clusterColorHex[d.cluster]||'#2563eb')
+    .attr('stroke-width',1.8)
+    .attr('stroke-opacity',d=>0.45+(d.freshness||0.5)*0.55)
+    .style('filter','url(#node-shadow)');
+
+  if(!isMobile){
+    topics.each(function(d){
+      const r=nodeRadius(d)+5,circ=2*Math.PI*r,dash=circ*(d.freshness||0.5);
+      d3.select(this).append('circle').attr('r',r).attr('fill','none')
+        .attr('stroke',clusterColorHex[d.cluster]||'#2563eb').attr('stroke-width',2)
+        .attr('stroke-opacity',(d.freshness||0.5)*0.4)
+        .attr('stroke-dasharray',`${dash} ${circ}`).attr('stroke-dashoffset',circ*0.25)
+        .attr('pointer-events','none');
+    });
+  }
+
+  entered.filter(d=>d.type==='topic'&&(d.freshness||1)<0.45)
+    .append('text').attr('text-anchor','middle').attr('y',d=>-nodeRadius(d)-7)
+    .attr('font-size','9px').attr('pointer-events','none').text('⚠');
+}
+
+function renderLabels() {
+  const lbl=labelG.selectAll('.node-label').data(nodes,d=>d.id);
+  lbl.exit().remove();
+  const entered=lbl.enter().append('text').attr('class','node-label')
+    .attr('text-anchor','middle')
+    .attr('font-family','Space Mono,monospace')
+    .attr('fill',d=>d.type==='person'?d.color:clusterColorHex[d.cluster]||'#374151')
+    .attr('opacity',0.8).attr('pointer-events','none')
+    .text(d=>d.label);
+
+  if(isMobile){
+    entered.attr('font-size','7px').attr('dy',d=>nodeRadius(d)+10);
+  } else {
+    entered.attr('font-size',d=>d.type==='person'?'8px':'7px');
+  }
+}
+
+// ── SELECTION ─────────────────────────────────────────────────────────────────
+function selectNode(d) {
+  const connected=new Set([d.id]);
+  const connEdges=links.filter(l=>{
+    const s=l.source.id||l.source,t=l.target.id||l.target;
+    if(s===d.id){connected.add(t);return true;}
+    if(t===d.id){connected.add(s);return true;}
+    return false;
+  });
+
+  nodeG.selectAll('.node-g').selectAll('circle,path').transition().duration(200)
+    .attr('opacity',n=>connected.has(n.id)?1:0.1)
+    .style('filter',n=>connected.has(n.id)?'url(#node-shadow-hover)':'url(#node-shadow)');
+  labelG.selectAll('.node-label').transition().duration(200)
+    .attr('opacity',n=>connected.has(n.id)?0.9:0.05);
+  linkG.selectAll('.edge').transition().duration(200)
+    .attr('stroke-opacity',l=>{const s=l.source.id||l.source,t=l.target.id||l.target;return(s===d.id||t===d.id)?0.9:0.03;})
+    .attr('stroke-width',l=>{const s=l.source.id||l.source,t=l.target.id||l.target;return(s===d.id||t===d.id)?(edgeWidths[l.type]||1)*1.8:(edgeWidths[l.type]||1);});
+
+  if(isMobile) showMobileNodePanel(d,connEdges);
+  else renderInfoPanel(d,connEdges);
+}
+
+function resetHighlight() {
+  if(!nodeG)return;
+  nodeG.selectAll('.node-g').selectAll('circle,path').transition().duration(250).attr('opacity',1).style('filter','url(#node-shadow)');
+  labelG.selectAll('.node-label').transition().duration(250).attr('opacity',0.8);
+  linkG.selectAll('.edge').transition().duration(250)
+    .attr('stroke-opacity',d=>d.type==='dependency'||d.type==='cooccur'?0.35:0.55)
+    .attr('stroke-width',d=>edgeWidths[d.type]||1);
+}
+
+// ── DESKTOP INFO PANEL ────────────────────────────────────────────────────────
+function renderInfoPanel(d, connEdges) {
+  const panel=document.getElementById('infoPanel');
+  const color=d.type==='person'?d.color:(clusterColorHex[d.cluster]||'#2563eb');
+  if(!connEdges) connEdges=links.filter(l=>{const s=l.source.id||l.source,t=l.target.id||l.target;return s===d.id||t===d.id;});
+  const typeLabel=d.type==='person'?'TEAM MEMBER · ◯ Circle':`TOPIC · ${(d.cluster||'').toUpperCase()} · ⬡ Hexagon`;
+
+  let html=`<div class="info-name">${d.label}</div><div class="info-type" style="color:${color}">${typeLabel}</div>`;
+  if(d.type==='person'){
+    html+=`<div class="info-row"><span class="info-row-key">Role</span><span class="info-row-val">${d.role}</span></div>`;
+    html+=`<div class="info-row"><span class="info-row-key">Knowledge edges</span><span class="info-row-val">${connEdges.filter(l=>l.type!=='dependency'&&l.type!=='cooccur').length}</span></div>`;
+  } else {
+    const fp=Math.round((d.freshness||0.5)*100);
+    const fc=fp>70?'#059669':fp>40?'#d97706':'#dc2626';
+    html+=`<div class="info-row"><span class="info-row-key">Depth</span><span class="info-row-val">${'█'.repeat(d.depth||1)}${'░'.repeat(5-(d.depth||1))}</span></div>`;
+    html+=`<div class="info-row"><span class="info-row-key">Freshness</span><span class="info-row-val" style="color:${fc}">${fp}%</span></div>`;
+    if(fp<45) html+=`<div style="margin:8px 0;padding:6px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;font-size:0.57rem;color:#dc2626">⚠ Knowledge gap — no updates in 2+ weeks</div>`;
+  }
+
+  if(connEdges.length>0){
+    html+=`<div class="sidebar-label" style="margin-top:14px;margin-bottom:8px">Connections</div><div>`;
+    connEdges.slice(0,10).forEach(l=>{
+      const oid=(l.source.id||l.source)===d.id?(l.target.id||l.target):(l.source.id||l.source);
+      const other=nodes.find(n=>n.id===oid);
+      if(!other)return;
+      const ec=edgeColors[l.type]||'#888';
+      const cp=Math.round(l.confidence*100);
+      const ck=getEdgeChunkKey(l);
+      const chips=(l.sources||[]).map(s=>{
+        const ss=sourceStyles[s]||{color:'#888',bg:'#f5f5f5',border:'#ccc'};
+        return `<span class="source-chip" style="color:${ss.color};background:${ss.bg};border-color:${ss.border}30" onclick="event.stopPropagation();openSourceModal('${ck||''}','${s}','${l.source.id||l.source}','${l.target.id||l.target}','${l.type}')" title="View source chunk">${sourceIcons[s]||s} ${s}</span>`;
+      }).join('');
+      html+=`<div class="conn-item" onclick="selectNode(nodes.find(n=>n.id==='${oid}'))">
+        <div class="conn-left">
+          <div class="conn-name" style="color:${ec}">${other.label}</div>
+          <div class="conn-type">${l.type}${l.note?' · '+l.note.slice(0,38)+'…':''}</div>
+          <div class="source-chips">${chips}</div>
+        </div>
+        <div class="conn-right">
+          <span class="conf-label" style="color:${ec}">${cp}%</span>
+          <div class="confidence-bar"><div class="confidence-fill" style="width:${cp}%;background:${ec}"></div></div>
+        </div>
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+  panel.innerHTML=html;
+}
+
+// ── MOBILE NODE PANEL ─────────────────────────────────────────────────────────
+function showMobileNodePanel(d, connEdges) {
+  const color=d.type==='person'?d.color:clusterColorHex[d.cluster];
+  const fp=d.freshness!=null?Math.round(d.freshness*100):null;
+  let connHtml='';
+  if(connEdges.length){
+    connHtml='<div style="font-size:0.5rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-dim);margin:12px 0 8px">Connections</div>';
+    connEdges.forEach(e=>{
+      const s=e.source.id||e.source,t=e.target.id||e.target;
+      const other=s===d.id?nodes.find(n=>n.id===t):nodes.find(n=>n.id===s);
+      if(!other)return;
+      const ec=edgeColors[e.type]||'#888';
+      const ck=getEdgeChunkKey(e);
+      const chips=(e.sources||[]).map(src=>{
+        const ss=sourceStyles[src]||{};
+        return `<span class="source-chip" style="color:${ss.color};background:${ss.bg};border-color:${ss.border}" onclick="event.stopPropagation();openSourceModal('${ck||''}','${src}','${e.source.id||e.source}','${e.target.id||e.target}','${e.type}')">${src} ↗</span>`;
+      }).join('');
+      connHtml+=`<div class="conn-item">
+        <div class="conn-left">
+          <div class="conn-name">${other.label}</div>
+          <div class="conn-type" style="color:${ec}">${e.type}</div>
+          <div class="source-chips">${chips}</div>
+        </div>
+        <div class="conn-right">
+          <span class="conf-label" style="color:${ec}">${Math.round(e.confidence*100)}%</span>
+          <div class="confidence-bar"><div class="confidence-fill" style="width:${Math.round(e.confidence*100)}%;background:${ec}"></div></div>
+        </div>
+      </div>`;
+    });
+  }
+  document.getElementById('nodePanelContent').innerHTML=`
+    <div class="info-name" style="color:${color}">${d.label}</div>
+    <div class="info-type" style="color:${color}">${d.type==='person'?d.role:(d.cluster+' · topic')}</div>
+    ${fp!=null?`<div class="info-row"><span class="info-row-key">Freshness</span><div style="display:flex;align-items:center;gap:6px"><div class="confidence-bar"><div class="confidence-fill" style="width:${fp}%;background:${fp<45?'#ef4444':'#059669'}"></div></div><span class="info-row-val" style="color:${fp<45?'#ef4444':'#059669'}">${fp}%${fp<45?' ⚠':''}</span></div></div>`:''}
+    ${connHtml}
+  `;
+  document.getElementById('nodePanel').classList.add('open');
+}
+
+function closeNodePanel() {
+  document.getElementById('nodePanel').classList.remove('open');
+}
+
+// ── ZOOM ──────────────────────────────────────────────────────────────────────
+function zoomIn()   { svg.transition().duration(200).call(zoomBehavior.scaleBy,1.4); }
+function zoomOut()  { svg.transition().duration(200).call(zoomBehavior.scaleBy,0.7); }
+function resetZoom(){ svg.transition().duration(300).call(zoomBehavior.transform,d3.zoomIdentity); }
+
+// ── TOOLTIP (desktop hover) ───────────────────────────────────────────────────
+function showNodeTooltip(event,d) {
+  const tt=document.getElementById('tooltip');
+  const color=d.type==='person'?d.color:clusterColorHex[d.cluster];
+  document.getElementById('tt-name').style.color=color;
+  document.getElementById('tt-name').textContent=d.label;
+  document.getElementById('tt-meta').textContent=d.type==='person'
+    ?`${d.role} · ◯ Circle node`
+    :`${d.cluster} · ⬡ Hexagon · Freshness: ${Math.round((d.freshness||0.5)*100)}%${(d.freshness||1)<0.45?' ⚠ Gap':''}`;
+  positionTooltip(event,tt);
+  tt.classList.add('visible');
+}
+function showEdgeTooltip(event,d) {
+  const tt=document.getElementById('tooltip');
+  const ec=edgeColors[d.type]||'#888';
+  const sn=nodes.find(n=>n.id===(d.source.id||d.source));
+  const tn=nodes.find(n=>n.id===(d.target.id||d.target));
+  document.getElementById('tt-name').style.color=ec;
+  document.getElementById('tt-name').textContent=`${d.type.toUpperCase()} · ${Math.round(d.confidence*100)}% confident`;
+  document.getElementById('tt-meta').innerHTML=`<strong>${sn?.label||d.source} → ${tn?.label||d.target}</strong><br>Sources: ${(d.sources||[]).join(', ')}<br><em style="opacity:0.7">${d.note||''}</em><br><span style="color:var(--accent);font-size:0.55rem">Click source chips in panel to view chunks</span>`;
+  positionTooltip(event,tt);
+  tt.classList.add('visible');
+}
+function hideTooltip(){document.getElementById('tooltip').classList.remove('visible')}
+function positionTooltip(event,tt){
+  const ga=document.querySelector('.graph-area').getBoundingClientRect();
+  let x=event.clientX-ga.left+14,y=event.clientY-ga.top-12;
+  if(x+240>ga.width) x=event.clientX-ga.left-245;
+  tt.style.left=x+'px'; tt.style.top=y+'px';
+}
+
+// ── SOURCE MODAL ──────────────────────────────────────────────────────────────
+function openSourceModal(chunkKey, sourceFilter, sourceId, targetId, edgeType) {
+  const sn=nodes.find(n=>n.id===sourceId),tn=nodes.find(n=>n.id===targetId);
+  const ss=sourceStyles[sourceFilter]||{color:'#2563eb',bg:'#eff6ff',border:'#2563eb'};
+
+  document.getElementById('modalBreadcrumb').innerHTML=
+    `<span>${sn?.label||sourceId}</span><span class="bc-sep">→</span><span>${tn?.label||targetId}</span><span class="bc-sep">·</span><span style="color:${edgeColors[edgeType]||'#888'}">${edgeType}</span>`;
+  document.getElementById('modalTitle').textContent='Source Evidence';
+  document.getElementById('modalSubtitle').innerHTML=
+    `Showing chunks — ${sourceFilter?`filtered by <span style="color:${ss.color};font-weight:700">${sourceIcons[sourceFilter]||''} ${sourceFilter}</span>`:'all sources'}`;
+
+  let chunksToShow=[];
+  if(chunkKey&&EDGE_CHUNKS[chunkKey]){
+    EDGE_CHUNKS[chunkKey].forEach(cid=>{
+      if(SOURCE_CHUNKS[cid]) chunksToShow.push({...SOURCE_CHUNKS[cid],key:cid});
+    });
+  }
+  if(sourceFilter) chunksToShow=chunksToShow.filter(c=>c.source===sourceFilter);
+  if(!chunksToShow.length){
+    chunksToShow=[{source:sourceFilter||'docs',icon:sourceIcons[sourceFilter]||'📄',
+      docName:`${sourceFilter||'source'} — ${sn?.label||sourceId} ↔ ${tn?.label||targetId}`,
+      docDate:'Retrieved from knowledge base',contextBefore:'',
+      highlight:`This relationship was inferred from ${sourceFilter||'source'} activity. Specific chunk retrieval for this edge type is available in the full implementation.`,
+      contextAfter:'',confidence:0.60,edgeType,inferred:`Inferred from ${sourceFilter||'source'} patterns.`,key:'generic'}];
+  }
+
+  let bodyHtml='<div class="all-chunks-list">';
+  chunksToShow.forEach(chunk=>{
+    const cSS=sourceStyles[chunk.source]||ss;
+    const confPct=Math.round(chunk.confidence*100);
+    const confColor=confPct>80?'#059669':confPct>60?'#d97706':'#dc2626';
+    bodyHtml+=`<div>
+      <div class="chunk-meta">
+        <span class="chunk-badge" style="color:${cSS.color};background:${cSS.bg};border-color:${cSS.border}44">${chunk.icon} ${chunk.source.toUpperCase()}</span>
+        <span class="chunk-badge" style="color:${edgeColors[chunk.edgeType]||'#888'};background:${edgeColors[chunk.edgeType]||'#888'}11;border-color:${edgeColors[chunk.edgeType]||'#888'}33">${chunk.edgeType}</span>
+        <div class="confidence-block"><span>Confidence</span><div class="conf-track"><div class="conf-track-fill" style="width:${confPct}%;background:${confColor}"></div></div><span style="color:${confColor};font-weight:700">${confPct}%</span></div>
+      </div>
+      <div class="chunk-document">
+        <div class="chunk-doc-header"><span class="doc-icon">${chunk.icon}</span><span class="doc-name">${chunk.docName}</span><span class="doc-date">${chunk.docDate}</span></div>
+        <div class="chunk-text-wrap">
+          ${chunk.contextBefore?`<div class="chunk-context-before">${chunk.contextBefore}</div><hr class="chunk-divider">`:''}
+          <div class="chunk-text"><span class="chunk-highlight">${chunk.highlight}</span></div>
+          ${chunk.contextAfter?`<hr class="chunk-divider"><div class="chunk-context-after">${chunk.contextAfter}</div>`:''}
+        </div>
+      </div>
+      <div style="font-size:0.56rem;color:var(--text-dim);padding:0 2px;line-height:1.6"><strong style="color:var(--text)">Why retrieved:</strong> ${chunk.inferred}</div>
+    </div>`;
+  });
+  bodyHtml+='</div>';
+
+  document.getElementById('modalBody').innerHTML=bodyHtml;
+  document.getElementById('modalFooterNote').innerHTML=`${chunksToShow.length} chunk${chunksToShow.length!==1?'s':''} retrieved · Confidence reflects LLM certainty`;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function closeModalOverlay(e){
+  if(e.target===document.getElementById('modalOverlay')) document.getElementById('modalOverlay').classList.remove('open');
+}
+
+// ── FILTERS ───────────────────────────────────────────────────────────────────
+function toggleEdge(item) {
+  const et=item.dataset.edge;
+  if(activeEdgeTypes.has(et)){activeEdgeTypes.delete(et);item.classList.remove('active');item.classList.add('inactive');}
+  else{activeEdgeTypes.add(et);item.classList.add('active');item.classList.remove('inactive');}
+  // sync counterpart in other layout
+  document.querySelectorAll(`[data-edge="${et}"]`).forEach(el=>{
+    el.classList.toggle('active',activeEdgeTypes.has(et));
+    el.classList.toggle('inactive',!activeEdgeTypes.has(et));
+  });
+  if(simulation){renderLinks();simulation.alpha(0.1).restart();}
+}
+
+function toggleSource(chip) {
+  const s=chip.dataset.source;
+  if(activeSources.has(s)){activeSources.delete(s);chip.classList.remove('active');chip.classList.add('inactive');}
+  else{activeSources.add(s);chip.classList.add('active');chip.classList.remove('inactive');}
+  document.querySelectorAll(`[data-source="${s}"]`).forEach(el=>{
+    el.classList.toggle('active',activeSources.has(s));
+    el.classList.toggle('inactive',!activeSources.has(s));
+  });
+  if(simulation){renderLinks();simulation.alpha(0.1).restart();}
+}
+
+// ── QUERY ─────────────────────────────────────────────────────────────────────
+const QUERIES = {
+  auth:{kw:['auth','authentication','login','token','session','oauth','permissions'],nodes:['alex','sarah','auth','tokens','oauth','permissions'],text:`The Hive knows: <strong style="color:#7c3aed">Alex</strong> built the Auth Service (95% confidence, 42 commits). <strong style="color:#059669">Sarah</strong> debugged a session expiry issue 2 weeks ago. Auth depends on Token Mgmt and Permissions. ⚡ <strong style="color:#ef4444">Conflict detected:</strong> Alex & Sarah disagree on DB migration strategy affecting auth session storage.`},
+  deploy:{kw:['deploy','deployment','ci','cd','pipeline','release','infra','kubernetes'],nodes:['dev','ci','deploy','secrets','monitoring'],text:`The Hive knows: <strong style="color:#d97706">Dev</strong> owns the entire infra (CI pipeline, K8s, Helm charts). No other team member has significant context here — <strong style="color:#dc2626">single point of failure risk.</strong>`},
+  caching:{kw:['cache','caching','redis','performance'],nodes:['sarah','dev','alex','caching','tokens','db'],text:`<strong style="color:#059669">Sarah</strong> decided on Redis and wrote caching guidelines (78%). <strong style="color:#d97706">Dev</strong> debugged cache invalidation on deploy. <strong style="color:#7c3aed">Alex</strong> has only mentioned it in passing.`},
+  gap:{kw:['gap','unknown','missing','nobody','stale'],nodes:['a11y','migrations','oauth','secrets','search'],text:`Knowledge gaps detected: <strong style="color:#dc2626">Accessibility</strong> (30%) — Maria only, partial impl. <strong style="color:#dc2626">DB Migrations</strong> (45%) — Sarah sole owner + conflict with Alex. <strong style="color:#dc2626">Secrets Mgmt</strong> (50%) — Dev only. Bus-factor risks.`},
+  conflict:{kw:['conflict','disagree','debate','contradict'],nodes:['alex','sarah','migrations','db'],text:`1 active conflict: <strong style="color:#7c3aed">Alex</strong> vs <strong style="color:#059669">Sarah</strong> on DB migration strategy. Alex: Flyway. Sarah: Liquibase (17 migrations in). Unresolved — surfaced from 2 Slack messages + 1 meeting transcript (85% confidence).`},
+  frontend:{kw:['frontend','ui','component','state','routing','react'],nodes:['maria','ui','state','routing','a11y'],text:`<strong style="color:#db2777">Maria</strong> owns the full frontend stack (97% confidence, 78 commits). Accessibility defined by Maria but only partially implemented — <strong style="color:#d97706">30% fresh</strong>. No other team member has meaningful frontend context.`},
+  default:{nodes:[],text:`Try asking about: <em>auth, caching, deployment, knowledge gaps, conflicts,</em> or <em>frontend</em>.`},
+};
+
+function setQuery(q){
+  document.getElementById('queryInputMobile').value=q;
+  runQuery('mobile');
+}
+
+function runQuery(side) {
+  const inputEl=document.getElementById(side==='mobile'?'queryInputMobile':'queryInputDesktop');
+  const respEl=document.getElementById(side==='mobile'?'queryResponseMobile':'queryResponseDesktop');
+  const input=inputEl.value.trim().toLowerCase();
+  if(!input)return;
+  respEl.classList.add('visible');
+  respEl.innerHTML=`<div class="response-thinking">⬡ Hive synthesizing <span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span></div>`;
+
+  let matched=QUERIES.default;
+  for(const [k,v] of Object.entries(QUERIES)){
+    if(k==='default')continue;
+    if((v.kw||[]).some(kw=>input.includes(kw))){matched=v;break;}
+  }
+  const fireNodes=new Set(matched.nodes);
+
+  if(simulation){
+    nodeG.selectAll('.node-g').selectAll('circle,path').transition().duration(250).attr('opacity',0.08);
+    labelG.selectAll('.node-label').transition().duration(250).attr('opacity',0.04);
+    linkG.selectAll('.edge').transition().duration(250).attr('stroke-opacity',0.03);
+    setTimeout(()=>{
+      const relEdges=links.filter(l=>{const s=l.source.id||l.source,t=l.target.id||l.target;return fireNodes.has(s)&&fireNodes.has(t);});
+      relEdges.forEach((l,i)=>setTimeout(()=>{
+        const s=l.source.id||l.source,t=l.target.id||l.target;
+        linkG.selectAll('.edge').filter(el=>{const es=el.source.id||el.source,et=el.target.id||el.target;return(es===s&&et===t)||(es===t&&et===s);})
+          .raise().transition().duration(120).attr('stroke-opacity',1).attr('stroke-width',d=>(edgeWidths[d.type]||1)*2.5)
+          .transition().duration(700).attr('stroke-opacity',0.8).attr('stroke-width',d=>edgeWidths[d.type]||1);
+      },i*110));
+      matched.nodes.forEach((nid,i)=>setTimeout(()=>{
+        nodeG.selectAll('.node-g').filter(d=>d.id===nid).selectAll('circle,path').transition().duration(180).attr('opacity',1).style('filter','url(#node-shadow-hover)');
+        labelG.selectAll('.node-label').filter(d=>d.id===nid).transition().duration(180).attr('opacity',1);
+      },i*75));
+      setTimeout(()=>{respEl.innerHTML=matched.text;},matched.nodes.length*75+350);
+      setTimeout(()=>{
+        nodeG.selectAll('.node-g').selectAll('circle,path').transition().duration(500).attr('opacity',1).style('filter','url(#node-shadow)');
+        labelG.selectAll('.node-label').transition().duration(500).attr('opacity',0.8);
+        linkG.selectAll('.edge').transition().duration(500)
+          .attr('stroke-opacity',d=>d.type==='dependency'||d.type==='cooccur'?0.35:0.55)
+          .attr('stroke-width',d=>edgeWidths[d.type]||1);
+      },matched.nodes.length*75+5000);
+    },700);
+  } else {
+    setTimeout(()=>{respEl.innerHTML=matched.text;},900);
+  }
+}
+
+document.getElementById('queryInputDesktop').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();runQuery('desktop');}});
+document.getElementById('queryInputMobile').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();runQuery('mobile');}});
+
+// ── TICKER ────────────────────────────────────────────────────────────────────
+const ticks=[
+  {time:'now', text:'Alex pushed 3 commits to auth-service'},
+  {time:'2m',  text:'Sarah updated caching guidelines doc'},
+  {time:'8m',  text:'Dev recorded daily update — CI/CD'},
+  {time:'14m', text:'Meeting transcript processed'},
+  {time:'1h',  text:'Maria: new component lib v2.4.0 tagged'},
+  {time:'2h',  text:'Conflict detected: Alex↔Sarah on migrations'},
+  {time:'3h',  text:'Knowledge gap flagged: Accessibility (30%)'},
+];
+let ti=0;
+function tick(){
+  const c=document.getElementById('tickerItems');
+  if(ti>=ticks.length)ti=0;
+  const m=ticks[ti++];
+  const el=document.createElement('div');
+  el.className='ticker-item';
+  el.innerHTML=`<span class="ticker-time">${m.time}</span><span>${m.text}</span>`;
+  c.insertBefore(el,c.firstChild);
+  if(c.children.length>(isMobile?2:3))c.removeChild(c.lastChild);
+}
+tick();setInterval(tick,4200);
+
+// ── TEAM CARDS (mobile query tab) ─────────────────────────────────────────────
+function buildTeamCards(){
+  const container=document.getElementById('teamCards');
+  if(!container)return;
+  PEOPLE.forEach(p=>{
+    const myEdges=EDGES_RAW.filter(e=>e.source===p.id||e.target===p.id);
+    const topTopics=EDGES_RAW.filter(e=>e.source===p.id&&e.type==='built')
+      .sort((a,b)=>b.confidence-a.confidence).slice(0,3)
+      .map(e=>{const t=TOPICS.find(t=>t.id===e.target);return t?t.label:'';}).filter(Boolean);
+    container.innerHTML+=`<div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+      <div style="width:36px;height:36px;border-radius:50%;background:${p.color}18;border:2px solid ${p.color};display:flex;align-items:center;justify-content:center;font-family:Syne,sans-serif;font-weight:800;font-size:0.65rem;color:${p.color};flex-shrink:0">${p.avatar}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-family:Syne,sans-serif;font-weight:700;font-size:0.78rem;color:var(--text-bright)">${p.label}</div>
+        <div style="font-size:0.52rem;color:var(--text-dim);margin-bottom:4px">${p.role}</div>
+        ${topTopics.length?`<div style="display:flex;gap:4px;flex-wrap:wrap">${topTopics.map(t=>`<span style="padding:1px 7px;background:${p.color}14;color:${p.color};border:1px solid ${p.color}33;border-radius:10px;font-size:0.48rem">${t}</span>`).join('')}</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-family:Syne,sans-serif;font-size:0.85rem;font-weight:800;color:${p.color}">${myEdges.length}</div>
+        <div style="font-size:0.46rem;color:var(--text-dim)">edges</div>
+      </div>
+    </div>`;
+  });
+}
+buildTeamCards();
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+setTimeout(initGraph, 80);
+</script>
+</body>
+</html>
